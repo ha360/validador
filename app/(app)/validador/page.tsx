@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type DocResult = {
   nombre: string;
@@ -45,6 +46,7 @@ export default function Home() {
   const [result, setResult] = useState<ValidationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const supabase = createClient();
 
   const addFiles = (newFiles: FileList | null) => {
     if (!newFiles) return;
@@ -114,6 +116,21 @@ export default function Home() {
       if (!valRes.ok) throw new Error(valData.error || "Error al validar");
 
       setResult(valData);
+
+      // Registrar uso en Supabase
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const fallas = valData.validaciones_cruzadas?.filter(
+          (v: { estado: string }) => v.estado === "FALLA"
+        ).length ?? 0;
+        await supabase.from("uso_validador").insert({
+          user_id: user.id,
+          resguardo: valData.resumen?.resguardo ?? null,
+          resultado: valData.resultado_final ?? null,
+          num_documentos: files.length,
+          num_fallas: fallas,
+        });
+      }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Error al validar");
     } finally {
@@ -144,19 +161,11 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      <header className="bg-[#005A9C] text-white shadow">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center gap-4">
-          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shrink-0">
-            <span className="text-[#005A9C] font-bold text-xs text-center leading-tight">URT</span>
-          </div>
-          <div>
-            <h1 className="text-xl font-bold leading-tight">Validador de Paquetes de Eventos</h1>
-            <p className="text-blue-200 text-sm">Unidad de Restitución de Tierras — Revisión de documentos</p>
-          </div>
-        </div>
-      </header>
-
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-6">
+        <div>
+          <h1 className="text-xl font-bold text-gray-800">Validador de Paquetes</h1>
+          <p className="text-gray-500 text-sm">Revisión de documentos para eventos de resguardos</p>
+        </div>
         {/* Upload */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-800 mb-1">Cargar documentos del paquete</h2>
