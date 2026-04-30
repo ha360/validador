@@ -28,6 +28,12 @@ VALIDACIONES CRUZADAS obligatorias:
 - Nombre del Resguardo: debe ser consistente
 - Vigencia del Acta de Posesión: debe cubrir el año del evento
 
+VALIDACIONES DE PARTICIPANTES Y COTIZACIÓN (MUY IMPORTANTE):
+- Participantes multi-día: La Disposición de Asistencia indica cuántas personas asisten (por ejemplo 30). La Solicitud de Evento CO-FO-10 indica cuántos días dura el evento. Las cantidades en la Cotización para ítems diarios (desayuno, almuerzo, refrigerio, cena, agua) deben ser participantes × número de días. Ejemplo: 30 personas × 2 días = 60 raciones → es CORRECTO. NO marcar como falla si la cotización tiene el doble (o triple) de participantes cuando hay múltiples días. La fórmula es: cantidad_cotización = participantes × días.
+- Consistencia de ítems cotización vs solicitud: Los ítems cotizados deben corresponder a lo solicitado en CO-FO-10 (alimentación, transporte, alojamiento, etc.). Si la solicitud pide desayuno y almuerzo para 2 días con 30 personas, la cotización debe tener esos ítems con cantidad 60.
+- Verificación de costos razonables: Los precios unitarios deben ser razonables para Colombia (desayuno entre $10.000-$50.000, almuerzo entre $15.000-$60.000, refrigerio entre $8.000-$30.000, alojamiento entre $30.000-$150.000 por persona/noche). Marcar OBSERVACION si algún precio parece fuera de rango, no FALLA.
+- Total cotización: Verificar que la suma de ítems cuadre con el total declarado en la cotización.
+
 FORMATO: responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
 
 export async function POST(request: NextRequest) {

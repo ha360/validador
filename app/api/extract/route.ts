@@ -53,13 +53,21 @@ export async function POST(request: NextRequest) {
         "fecha_evento": "fecha del evento si aparece",
         "nombre_evento": "nombre del evento si aparece",
         "municipio": "municipio si aparece",
-        "num_participantes": "número de participantes si aparece",
+        "num_participantes": "número de participantes por día según este documento",
+        "num_dias_evento": "número de días que dura el evento según este documento (busca columnas de días, fechas de inicio y fin, etc.)",
         "vigencia": "año de vigencia si es un acta de posesión",
-        "observacion": "cualquier problema o dato importante"
+        "cotizacion_items": "si es una Cotización, extrae la lista de ítems con descripción y cantidad como texto, ej: 'Desayuno x60, Almuerzo x60, Salón x2'",
+        "cotizacion_total": "si es una Cotización, el valor total del evento en pesos",
+        "observacion": "cualquier dato importante"
       }
     }
   ]
-}`,
+}
+
+NOTAS IMPORTANTES para la extracción:
+- En la Solicitud de Evento (CO-FO-10) hay una tabla con columnas por día (Día 1, Día 2, etc.). Extrae cuántos días tiene el evento y cuántos participantes por día.
+- En la Cotización, las cantidades de alimentación (desayuno, almuerzo, etc.) deben ser participantes × número de días. Extrae las cantidades exactas de cada ítem.
+- El número de participantes en la Disposición de Asistencia es por comunidad (personas que asisten), no el total de raciones.`,
     });
 
     const response = await client.messages.create({
