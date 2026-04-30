@@ -3,8 +3,6 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Instrucciones de validación — siempre iguales, se cachean entre llamadas
-// para ahorrar tokens (cache_control ephemeral, TTL 5 min en Anthropic)
 const VALIDATION_SYSTEM = `Eres un validador de documentos para la Unidad de Restitución de Tierras (URT) de Colombia, decreto ley de Víctimas 4633 de 2011.
 
 DOCUMENTOS REQUERIDOS en todo paquete de evento:
@@ -19,17 +17,48 @@ DOCUMENTOS REQUERIDOS en todo paquete de evento:
 9. Soporte de Adquisición / No Obligados a Facturar
 10. Autorización de Consignación y Compromiso de Reembolso
 11. Autorización Ritual (si aplica)
+Nota: algunos paquetes incluyen Certificado de Representación Legal del Ministerio del Interior en lugar o además del Acta de Posesión — es válido.
 
 VALIDACIONES CRUZADAS obligatorias:
-- NIT del resguardo: debe coincidir en RUT, Certificación Bancaria, Autorización de Consignación y demás documentos donde aparezca
-- Nombre del Gobernador: debe coincidir en Acta de Posesión, Carta de Asistencia, Autorización de Consignación y Cédula
+- NIT del resguardo: debe coincidir en RUT, Certificación Bancaria, Autorización y demás documentos
+- Nombre del Gobernador: debe coincidir en Acta de Posesión, Carta de Asistencia, Autorización y Cédula
 - Cédula (CC) del Gobernador: debe coincidir en todos los documentos
-- Número de cuenta bancaria: comparar Certificación Bancaria vs Autorización de Consignación (ignorar guiones y formato, comparar solo dígitos)
-- Fecha del evento: debe ser la misma en todos los documentos que la mencionen
-- Nombre del Resguardo: debe ser consistente en todos los documentos
-- Vigencia del Acta de Posesión: debe corresponder al año actual o cubrir el año del evento
+- Número de cuenta bancaria: comparar Certificación Bancaria vs Autorización (ignorar guiones, comparar solo dígitos)
+- Fecha del evento: debe ser la misma en todos los documentos
+- Nombre del Resguardo: debe ser consistente
+- Vigencia del Acta de Posesión: debe cubrir el año del evento
 
-FORMATO DE RESPUESTA — responde ÚNICAMENTE con JSON válido, sin texto adicional:
+FORMATO: responde ÚNICAMENTE con JSON válido, sin texto adicional.`;
+
+export async function POST(request: NextRequest) {
+  try {
+    // Recibe los datos ya extraídos (JSON puro, sin archivos)
+    const { documentos_extraidos } = await request.json();
+
+    if (!documentos_extraidos || documentos_extraidos.length === 0) {
+      return NextResponse.json({ error: "No se recibieron datos extraídos" }, { status: 400 });
+    }
+
+    const resumen = JSON.stringify(documentos_extraidos, null, 2);
+
+    const response = await client.messages.create({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 4096,
+      system: [
+        {
+          type: "text",
+          text: VALIDATION_SYSTEM,
+          cache_control: { type: "ephemeral" },
+        },
+      ],
+      messages: [
+        {
+          role: "user",
+          content: `A continuación están los datos extraídos de cada documento del paquete:
+
+${resumen}
+
+Con base en esta información, genera el informe de validación completo en JSON:
 {
   "resumen": {
     "resguardo": "",
@@ -52,82 +81,21 @@ FORMATO DE RESPUESTA — responde ÚNICAMENTE con JSON válido, sin texto adicio
   "documentos_faltantes": [],
   "resultado_final": "APROBADO|APROBADO_CON_OBSERVACIONES|RECHAZADO",
   "resumen_ejecutivo": ""
-}`;
-
-export async function POST(request: NextRequest) {
-  try {
-    const formData = await request.formData();
-    const files = formData.getAll("files") as File[];
-
-    if (!files || files.length === 0) {
-      return NextResponse.json(
-        { error: "No se recibieron archivos" },
-        { status: 400 }
-      );
-    }
-
-    // Construir contenido del mensaje: primero los documentos, luego la instrucción
-    const userContent: Anthropic.MessageParam["content"] = [];
-    const fileNames: string[] = [];
-
-    for (const file of files) {
-      const bytes = await file.arrayBuffer();
-      const base64 = Buffer.from(bytes).toString("base64");
-      fileNames.push(file.name);
-
-      if (file.name.toLowerCase().endsWith(".pdf")) {
-        userContent.push({
-          type: "document",
-          source: { type: "base64", media_type: "application/pdf", data: base64 },
-          title: file.name,
-        } as Anthropic.DocumentBlockParam);
-      } else {
-        // Excel u otro: mencionar el nombre para que Claude lo tenga en cuenta
-        userContent.push({
-          type: "text",
-          text: `[Archivo: ${file.name} — formulario Excel adjunto al paquete]`,
-        });
-      }
-    }
-
-    // Instrucción final con los nombres de archivos recibidos
-    userContent.push({
-      type: "text",
-      text: `Archivos recibidos en este paquete: ${fileNames.join(", ")}\n\nValida todos los documentos y devuelve el JSON de resultado.`,
-    });
-
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
-      system: [
-        {
-          type: "text",
-          text: VALIDATION_SYSTEM,
-          // Cache_control marca este bloque para ser cacheado.
-          // Las instrucciones son siempre iguales → ahorro del 90% en esos tokens.
-          cache_control: { type: "ephemeral" },
+}`,
         },
       ],
-      messages: [{ role: "user", content: userContent }],
     });
 
     const rawText =
       response.content[0].type === "text" ? response.content[0].text : "";
-
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return NextResponse.json(
-        { error: "No se pudo parsear la respuesta", raw: rawText },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "No se pudo parsear respuesta", raw: rawText }, { status: 500 });
     }
 
-    const validationResult = JSON.parse(jsonMatch[0]);
-    return NextResponse.json(validationResult);
+    return NextResponse.json(JSON.parse(jsonMatch[0]));
   } catch (error) {
-    console.error("Validation error:", error);
-    const message =
-      error instanceof Error ? error.message : "Error interno al procesar";
+    const message = error instanceof Error ? error.message : "Error interno";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
